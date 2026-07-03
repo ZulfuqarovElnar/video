@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scroll-Scrub Video Hero — cula.tech tərzi</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --ease: cubic-bezier(0.22, 1, 0.36, 1);
+    }
+
+    html { scroll-behavior: auto; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0a0a0a;
+      color: #fff;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* --- Scroll konteyneri: hündürlüyü scroll məsafəsini təyin edir --- */
+    .scroll-hero {
+      position: relative;
+      height: 400vh;          /* nə qədər çox = o qədər yavaş/uzun scrub */
+    }
+
+    /* --- Sticky səhnə: ekranı tutur, video burada qalır --- */
+    .sticky-stage {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .sticky-stage video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      /* video-nu manual idarə edirik — autoplay YOX */
+    }
+
+    /* Videonun üstündə oxunaqlıq üçün örtük */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, rgba(0,0,0,.45) 0%, rgba(0,0,0,.15) 40%, rgba(0,0,0,.6) 100%);
+      pointer-events: none;
+    }
+
+    /* Hero mətni */
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      padding: 0 24px;
+      max-width: 900px;
+    }
+
+    .hero-content h1 {
+      font-size: clamp(2.4rem, 7vw, 6rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.02;
+      margin-bottom: 20px;
+    }
+
+    .hero-content p {
+      font-size: clamp(1rem, 2.2vw, 1.4rem);
+      color: rgba(255,255,255,.8);
+      max-width: 560px;
+      margin: 0 auto;
+    }
+
+    /* Scroll göstərici */
+    .scroll-hint {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 3;
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      transition: opacity .4s var(--ease);
+    }
+    .scroll-hint .mouse {
+      width: 24px; height: 38px;
+      border: 2px solid rgba(255,255,255,.5);
+      border-radius: 14px;
+      position: relative;
+    }
+    .scroll-hint .mouse::after {
+      content: "";
+      position: absolute;
+      top: 7px; left: 50%;
+      width: 3px; height: 7px;
+      background: #fff;
+      border-radius: 2px;
+      transform: translateX(-50%);
+      animation: wheel 1.6s var(--ease) infinite;
+    }
+    @keyframes wheel {
+      0% { opacity: 0; transform: translate(-50%, 0); }
+      40% { opacity: 1; }
+      100% { opacity: 0; transform: translate(-50%, 12px); }
+    }
+
+    /* Video seçici */
+    .video-switcher {
+      position: fixed;
+      top: 20px; left: 20px;
+      z-index: 60;
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,.35);
+      backdrop-filter: blur(10px);
+      padding: 6px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.12);
+    }
+    .video-switcher button {
+      font: inherit;
+      font-size: .82rem;
+      color: rgba(255,255,255,.7);
+      background: transparent;
+      border: none;
+      padding: 7px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background .2s var(--ease), color .2s var(--ease);
+    }
+    .video-switcher button:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .video-switcher button.active { color: #fff; background: #4f8cff; }
+
+    /* Yükləmə barı */
+    .load-bar {
+      position: fixed;
+      top: 0; left: 0;
+      height: 3px;
+      width: 0;
+      background: #4f8cff;
+      z-index: 100;
+      transition: width .2s ease, opacity .5s ease;
+    }
+
+    /* Scroll irəliləyiş göstəricisi (sağda) */
+    .progress-track {
+      position: fixed;
+      right: 20px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 4px;
+      height: 120px;
+      background: rgba(255,255,255,.15);
+      border-radius: 4px;
+      z-index: 50;
+      overflow: hidden;
+    }
+    .progress-fill {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 0%;
+      background: #4f8cff;
+      border-radius: 4px;
+    }
+
+    /* Sonrakı bölmə — scroll-un davam etdiyini göstərmək üçün */
+    .after {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+      background: #0a0a0a;
+      text-align: center;
+      padding: 40px;
+    }
+    .after h2 { font-size: clamp(1.8rem, 4vw, 3rem); font-weight: 700; }
+    .after p { color: rgba(255,255,255,.6); max-width: 500px; }
+  </style>
+</head>
+<body>
+
+  <div class="load-bar" id="loadBar"></div>
+  <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+
+  <!-- Video seçici -->
+  <div class="video-switcher" id="videoSwitcher">
+    <button class="active" data-src="hero-scrub.mp4">Bunny</button>
+    <button data-src="hero-jellyfish.mp4">Jellyfish</button>
+    <button data-src="hero-sintel.mp4">Sintel</button>
+  </div>
+
+  <!-- ============ SCROLL-SCRUB HERO ============ -->
+  <section class="scroll-hero" id="scrollHero">
+    <div class="sticky-stage">
+      <!--
+        preload="auto" + muted + playsinline vacibdir.
+        Öz videonu qoymaq üçün <source src="..."> hissəsini dəyiş.
+      -->
+      <video
+        id="scrubVideo"
+        muted
+        playsinline
+        preload="auto"
+        crossorigin="anonymous">
+        <source src="hero-scrub.mp4" type="video/mp4" />
+      </video>
+
+      <div class="overlay"></div>
+
+      <div class="hero-content">
+        <h1>Scroll ilə<br>hərəkət edən video</h1>
+        <p>Səhifəni aşağı sürüşdür — video scroll mövqeyinə bağlı olaraq oynayır və geri sarınır.</p>
+      </div>
+
+      <div class="scroll-hint" id="scrollHint">
+        <span>Scroll</span>
+        <div class="mouse"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ HERO-DAN SONRA ============ -->
+  <section class="after">
+    <h2>Hero bitdi ✦</h2>
+    <p>Yuxarı scroll etsən video geri sarınacaq. Öz videonu qoymaq üçün HTML-dəki <code>&lt;source&gt;</code> ünvanını dəyişdir.</p>
+  </section>
+
+  <script>
+    const video      = document.getElementById('scrubVideo');
+    const heroSection = document.getElementById('scrollHero');
+    const loadBar    = document.getElementById('loadBar');
+    const progressFill = document.getElementById('progressFill');
+    const scrollHint = document.getElementById('scrollHint');
+
+    let videoDuration = 0;
+    let targetTime    = 0;   // scroll-dan hesablanan hədəf an
+    let currentTime   = 0;   // hazırda göstərilən an (yumşaq keçid üçün)
+    let isSeeking     = false; // Safari üçün: seek bitməmiş yenisini vermə
+    let rafId         = null;
+
+    // --- Video metadata yükləndikdə ---
+    video.addEventListener('loadedmetadata', () => {
+      videoDuration = video.duration;
+      updateTarget();
+    });
+
+    // İlk kadrı göstərmək üçün (bəzi brauzerlərdə əvvəl qara olur)
+    video.addEventListener('loadeddata', () => {
+      try { video.currentTime = 0.001; } catch (e) {}
+    });
+
+    // Seek bitdi — növbəti seek-ə icazə ver
+    video.addEventListener('seeked', () => { isSeeking = false; });
+
+    // Yükləmə göstəricisi
+    video.addEventListener('progress', () => {
+      if (video.buffered.length && video.duration) {
+        const pct = (video.buffered.end(video.buffered.length - 1) / video.duration) * 100;
+        loadBar.style.width = pct + '%';
+        if (pct >= 99) {
+          loadBar.style.opacity = '0';
+        }
+      }
+    });
+
+    video.addEventListener('canplaythrough', () => {
+      loadBar.style.width = '100%';
+      loadBar.style.opacity = '0';
+    });
+
+    // Bəzi brauzerlərdə currentTime təyin etmək üçün video "oynadılmış" olmalıdır.
+    // Səssiz qısa play/pause ilə seek-i açırıq.
+    function primeVideo() {
+      video.play().then(() => {
+        video.pause();
+      }).catch(() => { /* autoplay bloklana bilər — problem deyil */ });
+    }
+    document.addEventListener('click', primeVideo, { once: true });
+    document.addEventListener('scroll', primeVideo, { once: true });
+    window.addEventListener('load', primeVideo);
+
+    // --- Scroll faizini hesabla (0..1) ---
+    function updateTarget() {
+      if (!videoDuration) return;
+
+      const rect = heroSection.getBoundingClientRect();
+      const scrollableDist = heroSection.offsetHeight - window.innerHeight;
+      // heroSection-un yuxarısı viewport yuxarısından nə qədər keçib
+      const scrolled = Math.min(Math.max(-rect.top, 0), scrollableDist);
+      const progress = scrollableDist > 0 ? scrolled / scrollableDist : 0;
+
+      targetTime = progress * videoDuration;
+
+      // Sağdakı progress bar
+      progressFill.style.height = (progress * 100) + '%';
+
+      // Scroll ipucu ilk hərəkətdən sonra sönür
+      scrollHint.style.opacity = progress > 0.02 ? '0' : '1';
+    }
+
+    window.addEventListener('scroll', updateTarget, { passive: true });
+    window.addEventListener('resize', updateTarget);
+
+    // --- Yumşaq render dövrü (lerp ilə cıqqıltısız scrub) ---
+    function render() {
+      // currentTime-i hədəfə doğru tədricən yaxınlaşdır
+      currentTime += (targetTime - currentTime) * 0.12;
+
+      if (Math.abs(targetTime - currentTime) < 0.01) {
+        currentTime = targetTime;
+      }
+
+      // VACİB: Safari bir seek bitmədən yenisini qəbul etmir.
+      // Ona görə yalnız əvvəlki seek bitəndə növbətini veririk.
+      if (video.readyState >= 2 && !isSeeking && videoDuration) {
+        const t = Math.max(0, Math.min(currentTime, videoDuration - 0.05));
+        if (Math.abs(video.currentTime - t) > 0.01) {
+          isSeeking = true;
+          try { video.currentTime = t; } catch (e) { isSeeking = false; }
+        }
+      }
+
+      rafId = requestAnimationFrame(render);
+    }
+    render();
+
+    // --- Video seçici: mənbəni dəyiş və yenidən başlat ---
+    const switcher = document.getElementById('videoSwitcher');
+    switcher.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn || btn.classList.contains('active')) return;
+
+      switcher.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      // Vəziyyəti sıfırla
+      videoDuration = 0;
+      targetTime = 0;
+      currentTime = 0;
+      isSeeking = false;
+      loadBar.style.width = '0';
+      loadBar.style.opacity = '1';
+
+      video.querySelector('source').src = btn.dataset.src;
+      video.load();          // yeni mənbəni yüklə (loadedmetadata yenidən işə düşər)
+      window.scrollTo(0, 0); // yuxarıdan başla
+      primeVideo();
+    });
+  </script>
+
+</body>
+</html>

@@ -1,0 +1,9 @@
+# Netlify konfiqurasiyası — statik deploy (build lazım deyil)
+[build]
+  publish = "."
+
+# Videolar üçün uzunmüddətli cache (Range sorğuları Netlify-də avtomatik dəstəklənir)
+[[headers]]
+  for = "/*.mp4"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
